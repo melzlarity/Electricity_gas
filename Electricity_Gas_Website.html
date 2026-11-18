@@ -5,305 +5,630 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Utility Tracker - Eichstätt</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/chart.js" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
     <style>
+        :root {
+            --electricity: #f5a623;
+            --gas: #df6d51;
+            --water: #2d89d0;
+        }
+        body { background: #f4f7fb; color: #263238; }
+        .app-header { background: linear-gradient(135deg, #173a5e, #286090); color: white; }
+        .version-badge { background: rgba(255,255,255,.14); }
+        .nav-tabs .nav-link { border: 0; color: #5b6770; font-weight: 600; }
+        .nav-tabs .nav-link.active { color: #173a5e; border-bottom: 3px solid #286090; }
+        .utility-card { border: 0; border-radius: 16px; box-shadow: 0 8px 28px rgba(31,52,76,.08); }
+        .utility-card .accordion-button { font-weight: 700; }
+        .utility-card .accordion-button:not(.collapsed) { background: #fff; color: #263238; box-shadow: none; }
+        .metric-card { background: #f8fafc; border: 1px solid #edf1f5; border-radius: 12px; padding: 16px; height: 100%; }
+        .metric-label { color: #7a8793; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; }
+        .metric-value { font-size: 1.35rem; font-weight: 750; }
+        .progress { height: 8px; border-radius: 99px; }
+        .reading-row { border-bottom: 1px solid #edf1f5; }
+        .reading-row:last-child { border-bottom: 0; }
+        .config-input { max-width: 210px; }
+        .toast-container { z-index: 1080; }
+        .chart-wrap { height: 280px; position: relative; }
+        .empty-state { border: 1px dashed #ccd6e0; border-radius: 12px; padding: 28px; text-align: center; color: #7a8793; }
+        @media (max-width: 767px) {
+            .app-header .header-actions { width: 100%; }
+            .app-header .header-actions .btn { flex: 1; }
+            .chart-wrap { height: 220px; }
+        }
         @media print {
-            .no-print { display: none; }
+            .no-print, .nav-tabs { display: none !important; }
+            body { background: white; }
+            .tab-pane { display: block !important; opacity: 1 !important; }
+            .tab-pane:not(#dashboard) { display: none !important; }
+            .utility-card { box-shadow: none; border: 1px solid #ddd; break-inside: avoid; }
         }
     </style>
 </head>
 <body>
-    <header class="bg-light py-3">
-        <div class="container">
-            <h1 class="display-5">Utility Tracker - Eichstätt</h1>
-            <span class="badge bg-secondary">v1.0.0</span>
-            <button onclick="exportData()" class="btn btn-primary">Export JSON</button>
-            <button onclick="importData()" class="btn btn-primary">Import JSON</button>
-            <button onclick="exportToPDF()" class="btn btn-primary no-print">Export to PDF</button>
+    <header class="app-header py-4 no-print">
+        <div class="container d-flex flex-wrap align-items-center justify-content-between gap-3">
+            <div>
+                <h1 class="h3 mb-1"><i class="bi bi-lightning-charge-fill me-2"></i>Utility Tracker - Eichstätt</h1>
+                <span class="badge version-badge">v1.1.0</span>
+            </div>
+            <div class="header-actions d-flex flex-wrap gap-2">
+                <button class="btn btn-light" onclick="exportData()"><i class="bi bi-download me-1"></i>JSON</button>
+                <button class="btn btn-light" onclick="document.getElementById('import-file').click()"><i class="bi bi-upload me-1"></i>Import</button>
+                <button class="btn btn-light" onclick="exportCSV()"><i class="bi bi-table me-1"></i>CSV</button>
+                <button class="btn btn-outline-light" onclick="window.print()"><i class="bi bi-printer me-1"></i>PDF</button>
+                <input id="import-file" type="file" accept=".json,application/json" hidden>
+            </div>
         </div>
     </header>
-    <div class="container mt-4">
-        <ul class="nav nav-tabs" id="myTab" role="tablist">
-            <li class="nav-item" role="presentation">
-                <button class="nav-link active" id="dashboard-tab" data-bs-toggle="tab" data-bs-target="#dashboard" type="button" role="tab" aria-controls="dashboard" aria-selected="true">Dashboard</button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="input-tab" data-bs-toggle="tab" data-bs-target="#input" type="button" role="tab" aria-controls="input" aria-selected="false">Data Input</button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="config-tab" data-bs-toggle="tab" data-bs-target="#config" type="button" role="tab" aria-controls="config" aria-selected="false">Database & Config</button>
-            </li>
+
+    <main class="container my-4">
+        <ul class="nav nav-tabs gap-2 no-print" id="mainTabs" role="tablist">
+            <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#dashboard" type="button">Dashboard</button></li>
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#input" type="button">Messwerte</button></li>
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#config" type="button">Tarife & Daten</button></li>
         </ul>
-        <div class="tab-content" id="myTabContent">
-            <div class="tab-pane fade show active" id="dashboard" role="tabpanel" aria-labelledby="dashboard-tab">
-                <div id="electricity-accordion" class="accordion">
-                    <div class="accordion-item">
-                        <h2 class="accordion-header" id="electricity-header">
-                            <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#electricity-collapse" aria-expanded="true" aria-controls="electricity-collapse">Strom</button>
-                        </h2>
-                        <div id="electricity-collapse" class="accordion-collapse collapse show" aria-labelledby="electricity-header" data-bs-parent="#electricity-accordion">
-                            <div class="accordion-body">
-                                <!-- Current period/month consumption, estimated cost, and configured monthly advance payment -->
-                                <div id="electricity-current"></div>
-                                <!-- Comparison list showing the latest reading and the previous 2 readings with their respective consumption values -->
-                                <div id="electricity-comparison"></div>
-                                <!-- Year-to-Date (YTD) & End-of-Year Projection -->
-                                <div id="electricity-ytd"></div>
-                                <!-- Responsive Chart.js bar chart visualizing consumption over time -->
-                                <canvas id="electricity-chart"></canvas>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <!-- Repeat similar structure for Gas and Water -->
+
+        <div class="tab-content pt-4" id="mainTabContent">
+            <div class="tab-pane fade show active" id="dashboard">
+                <div id="dashboard-content"></div>
             </div>
-            <div class="tab-pane fade" id="input" role="tabpanel" aria-labelledby="input-tab">
-                <div id="electricity-input" class="accordion">
-                    <div class="accordion-item">
-                        <h2 class="accordion-header" id="electricity-input-header">
-                            <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#electricity-input-collapse" aria-expanded="true" aria-controls="electricity-input-collapse">Strom</button>
-                        </h2>
-                        <div id="electricity-input-collapse" class="accordion-collapse collapse show" aria-labelledby="electricity-input-header" data-bs-parent="#electricity-input">
-                            <div class="accordion-body">
-                                <!-- Date picker -->
-                                <input type="date" id="electricity-date" class="form-control" value="2023-10-01">
-                                <!-- Numeric Meter Reading input -->
-                                <input type="number" id="electricity-meter-reading" class="form-control" placeholder="kWh">
-                                <!-- Save button -->
-                                <button onclick="saveElectricityReading()" class="btn btn-primary">Save</button>
-                                <!-- List of all entered readings -->
-                                <div id="electricity-readings"></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <!-- Repeat similar structure for Gas and Water -->
+            <div class="tab-pane fade" id="input">
+                <div id="input-content"></div>
             </div>
-            <div class="tab-pane fade" id="config" role="tabpanel" aria-labelledby="config-tab">
-                <div id="config-section" class="accordion">
-                    <div class="accordion-item">
-                        <h2 class="accordion-header" id="config-header">
-                            <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#config-collapse" aria-expanded="true" aria-controls="config-collapse">Database & Config</button>
-                        </h2>
-                        <div id="config-collapse" class="accordion-collapse collapse show" aria-labelledby="config-header" data-bs-parent="#config-section">
-                            <div class="accordion-body">
-                                <!-- Display all configured parameters in read-only input fields -->
-                                <div id="config-read-only"></div>
-                                <!-- Toggle for editing configuration -->
-                                <button onclick="toggleConfigEdit()" class="btn btn-primary">Edit Configuration</button>
-                                <!-- Clear All Data button -->
-                                <button onclick="clearAllData()" class="btn btn-danger">Clear All Data</button>
-                                <!-- Save Settings button -->
-                                <button onclick="saveConfig()" class="btn btn-primary" style="display: none;">Save Settings</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+            <div class="tab-pane fade" id="config">
+                <div id="config-content"></div>
             </div>
+        </div>
+    </main>
+
+    <footer class="py-3 text-center text-secondary no-print">
+        <small>Website developed by Melvin Pradeep in collaboration with AI</small>
+    </footer>
+
+    <div class="toast-container position-fixed bottom-0 end-0 p-3 no-print">
+        <div id="app-toast" class="toast" role="alert">
+            <div class="toast-body" id="toast-message"></div>
         </div>
     </div>
-    <footer class="bg-light py-3 mt-4">
-        <div class="container">
-            <p>Website developed by Melvin Pradeep in collaboration with AI</p>
-        </div>
-    </footer>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
-        // Initialize localStorage with default configurations
-        const configs = {
-            electricity: {
-                basePriceGross: 10.44,
-                workPriceGross: 0.3315,
-                monthlyAbschlag: 121.00
-            },
-            gas: {
-                basePriceGross: 17.80,
-                workPriceGross: 0.1004,
-                conversionFactor: 10.7,
-                monthlyAbschlag: 304.00
-            },
-            water: {
-                monthlyAbschlag: 78.00
-            }
+        const DEFAULT_CONFIG = {
+            electricity: { basePrice: 10.44, workPrice: 0.3315, monthlyAbschlag: 121.00 },
+            gas: { basePrice: 17.80, workPrice: 0.1004, conversionFactor: 10.7, monthlyAbschlag: 304.00 },
+            water: { basePrice: 8.00, workPrice: 2.15, monthlyAbschlag: 78.00 }
         };
-        const data = localStorage.getItem('utilityData') ? JSON.parse(localStorage.getItem('utilityData')) : { electricity: [], gas: [], water: [] };
-        
-        // Initialize page elements and load data from localStorage
-        function init() {
-            loadDashboardData();
-            loadInputData();
-            loadConfigData();
-        }
 
-        // Function to load dashboard data
-        function loadDashboardData() {
-            const electricityData = data.electricity.slice().sort((a, b) => a.date - b.date);
-            if (electricityData.length > 0) {
-                const latestReading = electricityData[electricityData.length - 1];
-                const previousReading = electricityData[electricityData.length - 2] || {};
-                const consumption = latestReading.reading - previousReading.reading;
-                const cost = configs.electricity.monthlyAbschlag + (consumption * configs.electricity.workPriceGross);
-                document.getElementById('electricity-current').innerHTML = `
-                    <p>Current Consumption: ${consumption.toFixed(2)} kWh</p>
-                    <p>Estimated Cost: ${cost.toFixed(2)} €</p>
-                    <p>Monthly Abschlag: ${configs.electricity.monthlyAbschlag} €</p>
-                `;
-                // ... additional content for comparison and YTD/End-of-Year Projection
-                // ... initialize Chart.js bar chart
+        const UTILITY_META = {
+            electricity: { name: 'Strom', unit: 'kWh', inputUnit: 'kWh', icon: 'lightning-charge-fill', color: '#f5a623' },
+            gas: { name: 'Gas', unit: 'kWh', inputUnit: 'm³', icon: 'fire', color: '#df6d51' },
+            water: { name: 'Wasser', unit: 'm³', inputUnit: 'm³', icon: 'droplet-fill', color: '#2d89d0' }
+        };
+
+        let configs = loadConfigs();
+        let data = loadData();
+        let charts = {};
+        let editing = null;
+
+        function loadConfigs() {
+            try {
+                const saved = JSON.parse(localStorage.getItem('utilityConfigs'));
+                return saved ? mergeConfigs(saved) : structuredClone(DEFAULT_CONFIG);
+            } catch (_) {
+                return structuredClone(DEFAULT_CONFIG);
             }
         }
 
-        // Function to load input data
-        function loadInputData() {
-            const electricityInputs = data.electricity.map(reading => `
-                <div class="accordion-item">
-                    <h2 class="accordion-header" id="electricity-${reading.date}">
-                        <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#electricity-${reading.date}-collapse" aria-expanded="true" aria-controls="electricity-${reading.date}-collapse">
-                            Date: ${new Date(reading.date).toLocaleDateString()}
-                        </button>
-                    </h2>
-                    <div id="electricity-${reading.date}-collapse" class="accordion-collapse collapse show" aria-labelledby="electricity-${reading.date}" data-bs-parent="#electricity-input">
-                        <div class="accordion-body">
-                            <p>Meter Reading: ${reading.reading.toFixed(2)} kWh</p>
-                            <p>Consumption: ${reading.consumption.toFixed(2)} kWh</p>
-                            <p>Cost: ${reading.cost.toFixed(2)} €</p>
-                            <p>Elapsed Days: ${reading.elapsedDays}</p>
-                            <button onclick="editElectricityReading(${reading.date})" class="btn btn-secondary">Edit</button>
-                            <button onclick="deleteElectricityReading(${reading.date})" class="btn btn-danger">Delete</button>
-                        </div>
-                    </div>
-                </div>
-            `).join('');
-            document.getElementById('electricity-readings').innerHTML = electricityInputs;
+        function mergeConfigs(saved) {
+            const merged = structuredClone(DEFAULT_CONFIG);
+            Object.keys(merged).forEach(key => {
+                merged[key] = { ...merged[key], ...(saved[key] || {}) };
+            });
+            return merged;
         }
 
-        // Function to load config data
-        function loadConfigData() {
-            document.getElementById('config-read-only').innerHTML = `
-                <p>Electricity Base Price Gross: ${configs.electricity.basePriceGross.toFixed(2)} €/month</p>
-                <p>Electricity Work Price Gross: ${configs.electricity.workPriceGross.toFixed(5)} €/kWh</p>
-                <p>Electricity Monthly Abschlag: ${configs.electricity.monthlyAbschlag.toFixed(2)} €</p>
-                <!-- Repeat for Gas and Water -->
-            `;
+        function loadData() {
+            try {
+                const saved = JSON.parse(localStorage.getItem('utilityData'));
+                if (saved && typeof saved === 'object') {
+                    return normalizeStore(saved);
+                }
+            } catch (_) {}
+            return { electricity: [], gas: [], water: [] };
         }
 
-        // Function to save data to localStorage
+        function normalizeStore(store) {
+            const normalized = { electricity: [], gas: [], water: [] };
+            Object.keys(normalized).forEach(key => {
+                normalized[key] = (Array.isArray(store[key]) ? store[key] : []).map((item, index) => ({
+                    id: item.id || `${key}-${Date.now()}-${index}`,
+                    date: item.date ? String(item.date).slice(0, 10) : '',
+                    reading: Number(item.reading)
+                })).filter(item => item.date && Number.isFinite(item.reading));
+                normalized[key].sort((a, b) => a.date.localeCompare(b.date));
+            });
+            return normalized;
+        }
+
         function saveData() {
             localStorage.setItem('utilityData', JSON.stringify(data));
+            localStorage.setItem('utilityConfigs', JSON.stringify(configs));
         }
 
-        // Function to export data as JSON
-        function exportData() {
-            const json = JSON.stringify(data);
-            const downloadUrl = window.URL.createObjectURL(new Blob([json], {type: 'application/json'}));
-            const link = document.createElement('a');
-            link.href = downloadUrl;
-            link.download = 'utility_data.json';
-            link.click();
+        function showToast(message) {
+            document.getElementById('toast-message').textContent = message;
+            bootstrap.Toast.getOrCreateInstance(document.getElementById('app-toast'), { delay: 2500 }).show();
         }
 
-        // Function to import data from JSON
-        function importData() {
-            const fileInput = document.createElement('input');
-            fileInput.type = 'file';
-            fileInput.accept = '.json';
-            fileInput.onchange = (event) => {
-                const file = event.target.files[0];
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    const importedData = JSON.parse(e.target.result);
-                    data.electricity = [...data.electricity, ...importedData.electricity];
-                    data.gas = [...data.gas, ...importedData.gas];
-                    data.water = [...data.water, ...importedData.water];
-                    saveData();
-                    init(); // Refresh page after import
-                };
-                reader.readAsText(file);
+        function formatNumber(value, decimals = 2) {
+            return Number(value || 0).toLocaleString('de-DE', {
+                minimumFractionDigits: decimals,
+                maximumFractionDigits: decimals
+            });
+        }
+
+        function parseLocalDate(dateString) {
+            const [year, month, day] = dateString.split('-').map(Number);
+            return new Date(year, month - 1, day);
+        }
+
+        function formatDate(dateString) {
+            if (!dateString) return '—';
+            return parseLocalDate(dateString).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        }
+
+        function escapeHtml(value) {
+            return String(value).replace(/[&<>"']/g, character => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+            }[character]));
+        }
+
+        function calculateRecord(record, previous) {
+            if (!previous) return { consumption: 0, elapsedDays: 0 };
+            const elapsedDays = Math.max(1, Math.round((parseLocalDate(record.date) - parseLocalDate(previous.date)) / 86400000));
+            return {
+                consumption: Math.max(0, record.reading - previous.reading),
+                elapsedDays
             };
-            fileInput.click();
         }
 
-        // Function to export to PDF
-        function exportToPDF() {
-            // Code to export content to PDF
+        function getUsageUnitConsumption(key, readingDiff) {
+            if (key === 'gas') return readingDiff * configs.gas.conversionFactor;
+            return readingDiff;
         }
 
-        // Function to save electricity reading
-        function saveElectricityReading() {
-            const date = new Date(document.getElementById('electricity-date').value);
-            const reading = parseFloat(document.getElementById('electricity-meter-reading').value);
-            const previousReading = data.electricity[data.electricity.length - 1];
-            const consumption = reading - (previousReading ? previousReading.reading : 0);
-            const cost = configs.electricity.monthlyAbschlag + (consumption * configs.electricity.workPriceGross);
-            data.electricity.push({ date, reading, consumption, cost });
-            saveData();
-            init();
-            alert('Reading saved successfully.');
+        function getPeriodCost(key, consumption, elapsedDays) {
+            if (elapsedDays <= 0) return 0;
+            const usageCost = key === 'gas'
+                ? consumption * configs.gas.conversionFactor * configs.gas.workPrice
+                : consumption * configs[key].workPrice;
+            const baseCost = configs[key].basePrice * (elapsedDays / 365);
+            return usageCost + baseCost;
         }
 
-        // Function to edit electricity reading
-        function editElectricityReading(date) {
-            const reading = data.electricity.find(r => r.date === date);
-            document.getElementById('electricity-date').value = new Date(reading.date).toISOString().split('T')[0];
-            document.getElementById('electricity-meter-reading').value = reading.reading.toFixed(2);
+        function getPreparedRecords(key) {
+            const sorted = [...data[key]].sort((a, b) => a.date.localeCompare(b.date));
+            return sorted.map((record, index) => {
+                const previous = index ? sorted[index - 1] : null;
+                const period = calculateRecord(record, previous);
+                const cost = getPeriodCost(key, period.consumption, period.elapsedDays);
+                return { ...record, ...period, cost };
+            });
         }
 
-        // Function to delete electricity reading
-        function deleteElectricityReading(date) {
-            if (confirm('Are you sure you want to delete this reading?')) {
-                data.electricity = data.electricity.filter(r => r.date !== date);
-                saveData();
-                init();
-            }
+        function getDashboardSummary(key) {
+            const records = getPreparedRecords(key);
+            if (!records.length) return null;
+            const latest = records[records.length - 1];
+            const previous = records.length > 1 ? records[records.length - 2] : null;
+            const latestConsumption = latest.consumption;
+            const latestUsage = getUsageUnitConsumption(key, latestConsumption);
+            const latestDate = parseLocalDate(latest.date);
+            const monthFactor = latest.elapsedDays ? 30.4375 / latest.elapsedDays : 0;
+            const monthlyProjection = latestUsage * monthFactor;
+            const annualProjection = monthlyProjection * 12;
+
+            const year = latestDate.getFullYear();
+            const ytdConsumption = records
+                .filter(record => parseLocalDate(record.date).getFullYear() === year)
+                .reduce((sum, record) => sum + getUsageUnitConsumption(key, record.consumption), 0);
+            const yearStart = new Date(year, 0, 1);
+            const elapsedFraction = Math.max(1 / 365, Math.min(1, (latestDate - yearStart) / 31536000000));
+            const ytdProjection = ytdConsumption / elapsedFraction;
+
+            const periodCost = latest.cost;
+            const monthlyCostProjection = periodCost * monthFactor;
+            const difference = previous ? latestUsage - getUsageUnitConsumption(key, previous.consumption) : null;
+            const monthlyBalance = (configs[key].monthlyAbschlag || 0) - monthlyCostProjection;
+
+            return {
+                latest, previous, latestUsage, monthlyProjection, annualProjection,
+                ytdConsumption, ytdProjection, monthlyCostProjection, difference, monthlyBalance
+            };
         }
 
-        // Function to toggle config edit mode
-        function toggleConfigEdit() {
-            const saveButton = document.querySelector('.btn-primary');
-            const readOnlySection = document.getElementById('config-read-only');
-            const editableInputs = document.querySelectorAll('.editable-input');
-            if (saveButton.style.display === 'none') {
-                saveButton.style.display = 'block';
-                readOnlySection.style.display = 'none';
-                editableInputs.forEach(input => input.style.display = 'block');
-            } else {
-                saveButton.style.display = 'none';
-                readOnlySection.style.display = 'block';
-                editableInputs.forEach(input => input.style.display = 'none');
-            }
+        function renderDashboard() {
+            const container = document.getElementById('dashboard-content');
+            container.innerHTML = '';
+            Object.keys(UTILITY_META).forEach((key, utilityIndex) => {
+                const meta = UTILITY_META[key];
+                const summary = getDashboardSummary(key);
+                const records = getPreparedRecords(key);
+                const cardId = `dashboard-${key}-${utilityIndex}`;
+                const card = document.createElement('div');
+                card.className = 'card utility-card mb-4';
+                card.innerHTML = `
+                    <div class="accordion accordion-flush" id="accordion-${key}">
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#${cardId}">
+                                    <i class="bi bi-${meta.icon} me-2" style="color:${meta.color}"></i>${meta.name}
+                                </button>
+                            </h2>
+                            <div id="${cardId}" class="accordion-collapse collapse show">
+                                <div class="accordion-body">
+                                    ${summary ? renderDashboardBody(key, summary, records) : `
+                                        <div class="empty-state">
+                                            <i class="bi bi-clipboard-data fs-3 d-block mb-2"></i>
+                                            Noch keine Messwerte für ${meta.name}.<br>
+                                            <button class="btn btn-sm btn-primary mt-3" onclick="openInputTab()">Messwert erfassen</button>
+                                        </div>`}
+                                </div>
+                            </div>
+                        </div>
+                    </div>`;
+                container.appendChild(card);
+            });
+            requestAnimationFrame(() => {
+                Object.keys(UTILITY_META).forEach(key => {
+                    if (getDashboardSummary(key)) renderChart(key);
+                });
+            });
         }
 
-        // Function to clear all data
-        function clearAllData() {
-            if (confirm('Are you sure you want to clear all data?')) {
-                if (confirm('Are you absolutely sure?')) {
-                    data.electricity = [];
-                    data.gas = [];
-                    data.water = [];
-                    saveData();
-                    init();
+        function renderDashboardBody(key, summary, records) {
+            const meta = UTILITY_META[key];
+            const balanceText = summary.monthlyBalance >= 0 ? 'Voraussichtlicher Vorteil' : 'Voraussichtlicher Mehrbedarf';
+            const balanceClass = summary.monthlyBalance >= 0 ? 'text-success' : 'text-danger';
+            const trend = summary.difference === null
+                ? 'Erster erfasster Zeitraum'
+                : `${summary.difference >= 0 ? '+' : ''}${formatNumber(summary.difference)} ${meta.unit} gegenüber dem vorherigen Zeitraum`;
+
+            return `
+                <div class="row g-3 mb-4">
+                    <div class="col-6 col-lg-3"><div class="metric-card">
+                        <div class="metric-label">Letzte Verbrauchsperiode</div>
+                        <div class="metric-value">${formatNumber(summary.latestUsage)} ${meta.unit}</div>
+                        <small class="text-secondary">${formatDate(summary.latest.date)}</small>
+                    </div></div>
+                    <div class="col-6 col-lg-3"><div class="metric-card">
+                        <div class="metric-label">Prognostizierte Kosten</div>
+                        <div class="metric-value">${formatNumber(summary.monthlyCostProjection)} € / Monat</div>
+                        <small class="text-secondary">${formatNumber(summary.latest.cost)} € im Zeitraum</small>
+                    </div></div>
+                    <div class="col-6 col-lg-3"><div class="metric-card">
+                        <div class="metric-label">Monatlicher Abschlag</div>
+                        <div class="metric-value">${formatNumber(configs[key].monthlyAbschlag)} €</div>
+                        <small class="${balanceClass}">${balanceText}: ${formatNumber(Math.abs(summary.monthlyBalance))} €</small>
+                    </div></div>
+                    <div class="col-6 col-lg-3"><div class="metric-card">
+                        <div class="metric-label">Jahresprojektion</div>
+                        <div class="metric-value">${formatNumber(summary.ytdProjection)} ${meta.unit}</div>
+                        <small class="text-secondary">${trend}</small>
+                    </div></div>
+                </div>
+                <div class="row g-4">
+                    <div class="col-lg-8">
+                        <h6 class="mb-3">Verbrauchsverlauf</h6>
+                        <div class="chart-wrap"><canvas id="chart-${key}"></canvas></div>
+                    </div>
+                    <div class="col-lg-4">
+                        <h6 class="mb-3">Aktuelle Kennzahlen</h6>
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between small"><span>Laufzeit bis Jahresende</span><strong>${formatNumber(summary.ytdConsumption)} ${meta.unit} YTD</strong></div>
+                            <div class="progress mt-2"><div class="progress-bar" style="width:${Math.min(100, summary.ytdProjection ? summary.ytdConsumption / summary.ytdProjection * 100 : 0)}%;background:${meta.color}"></div></div>
+                        </div>
+                        <dl class="row small mb-0">
+                            <dt class="col-7">Prognose / Monat</dt><dd class="col-5 text-end">${formatNumber(summary.monthlyProjection)} ${meta.unit}</dd>
+                            <dt class="col-7">Prognose / Jahr</dt><dd class="col-5 text-end">${formatNumber(summary.annualProjection)} ${meta.unit}</dd>
+                            <dt class="col-7">Letzter Zählerstand</dt><dd class="col-5 text-end">${formatNumber(summary.latest.reading)} ${meta.inputUnit}</dd>
+                            <dt class="col-7">Zeitraum</dt><dd class="col-5 text-end">${summary.latest.elapsedDays} Tage</dd>
+                        </dl>
+                    </div>
+                </div>`;
+        }
+
+        function renderChart(key) {
+            const canvas = document.getElementById(`chart-${key}`);
+            if (!canvas) return;
+            if (charts[key]) charts[key].destroy();
+            const records = getPreparedRecords(key).filter(record => record.elapsedDays > 0);
+            const meta = UTILITY_META[key];
+            charts[key] = new Chart(canvas, {
+                type: 'bar',
+                data: {
+                    labels: records.map(record => formatDate(record.date)),
+                    datasets: [{
+                        label: `Verbrauch (${meta.unit})`,
+                        data: records.map(record => getUsageUnitConsumption(key, record.consumption)),
+                        backgroundColor: `${meta.color}CC`,
+                        borderColor: meta.color,
+                        borderWidth: 1,
+                        borderRadius: 7,
+                        maxBarThickness: 48
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { intersect: false, mode: 'index' },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: { callbacks: { label: context => ` ${formatNumber(context.parsed.y)} ${meta.unit}` } }
+                    },
+                    scales: {
+                        x: { grid: { display: false } },
+                        y: { beginAtZero: true, grid: { color: '#edf1f5' }, ticks: { callback: value => `${value} ${meta.unit}` } }
+                    }
                 }
+            });
+        }
+
+        function renderInput() {
+            const container = document.getElementById('input-content');
+            container.innerHTML = '';
+            Object.keys(UTILITY_META).forEach(key => {
+                const meta = UTILITY_META[key];
+                const records = getPreparedRecords(key);
+                const isEditing = editing && editing.key === key;
+                const card = document.createElement('div');
+                card.className = 'card utility-card mb-4';
+                card.innerHTML = `
+                    <div class="card-body">
+                        <div class="d-flex align-items-center justify-content-between mb-3">
+                            <h5 class="mb-0"><i class="bi bi-${meta.icon} me-2" style="color:${meta.color}"></i>${meta.name}</h5>
+                            ${isEditing ? '<span class="badge bg-warning text-dark">Bearbeitung aktiv</span>' : ''}
+                        </div>
+                        <form id="form-${key}" class="row g-3 align-items-end mb-4">
+                            <div class="col-md-4">
+                                <label class="form-label" for="${key}-date">Ablesedatum</label>
+                                <input id="${key}-date" type="date" class="form-control" required value="${isEditing ? escapeHtml(editing.date) : new Date().toISOString().slice(0, 10)}">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label" for="${key}-reading">Zählerstand (${meta.inputUnit})</label>
+                                <input id="${key}-reading" type="number" step="0.01" class="form-control" required placeholder="z. B. 12345" value="${isEditing ? escapeHtml(editing.reading) : ''}">
+                            </div>
+                            <div class="col-md-4 d-flex gap-2">
+                                <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>${isEditing ? 'Änderung speichern' : 'Speichern'}</button>
+                                ${isEditing ? `<button type="button" class="btn btn-outline-secondary" onclick="cancelEdit()">Abbrechen</button>` : ''}
+                            </div>
+                        </form>
+                        ${records.length ? `
+                            <div class="table-responsive">
+                                <table class="table align-middle mb-0">
+                                    <thead class="table-light"><tr>
+                                        <th>Datum</th><th>Zählerstand</th><th>Verbrauch</th><th>Geschätzte Kosten</th><th class="text-end no-print">Aktionen</th>
+                                    </tr></thead>
+                                    <tbody>${[...records].reverse().map(record => `
+                                        <tr>
+                                            <td>${formatDate(record.date)}</td>
+                                            <td>${formatNumber(record.reading)} ${meta.inputUnit}</td>
+                                            <td>${record.elapsedDays ? `${formatNumber(key === 'gas' ? record.consumption * configs.gas.conversionFactor : record.consumption)} ${meta.unit}` : '—'}</td>
+                                            <td>${record.elapsedDays ? `${formatNumber(record.cost)} €` : '—'}</td>
+                                            <td class="text-end no-print">
+                                                <button class="btn btn-sm btn-outline-secondary me-1" title="Bearbeiten" onclick="editReading('${key}','${encodeURIComponent(record.id)}')"><i class="bi bi-pencil"></i></button>
+                                                <button class="btn btn-sm btn-outline-danger" title="Löschen" onclick="deleteReading('${key}','${encodeURIComponent(record.id)}')"><i class="bi bi-trash"></i></button>
+                                            </td>
+                                        </tr>`).join('')}
+                                    </tbody>
+                                </table>
+                            </div>` : '<div class="empty-state">Noch keine Messwerte vorhanden.</div>'}
+                    </div>`;
+                container.appendChild(card);
+                document.getElementById(`form-${key}`).addEventListener('submit', event => saveReading(event, key));
+            });
+        }
+
+        function openInputTab() {
+            bootstrap.Tab.getOrCreateInstance(document.querySelector('[data-bs-target="#input"]')).show();
+        }
+
+        function saveReading(event, key) {
+            event.preventDefault();
+            const date = document.getElementById(`${key}-date`).value;
+            const reading = Number(document.getElementById(`${key}-reading`).value);
+            if (!date || !Number.isFinite(reading) || reading < 0) {
+                showToast('Bitte ein gültiges Datum und einen Zählerstand eingeben.');
+                return;
             }
-        }
 
-        // Function to save config changes
-        function saveConfig() {
-            // Update config values from editable inputs
-            configs.electricity.basePriceGross = parseFloat(document.getElementById('electricity-base-price-gross').value);
-            configs.electricity.workPriceGross = parseFloat(document.getElementById('electricity-work-price-gross').value);
-            configs.electricity.monthlyAbschlag = parseFloat(document.getElementById('electricity-monthly-abschlag').value);
-            configs.gas.basePriceGross = parseFloat(document.getElementById('gas-base-price-gross').value);
-            configs.gas.workPriceGross = parseFloat(document.getElementById('gas-work-price-gross').value);
-            configs.gas.conversionFactor = parseFloat(document.getElementById('gas-conversion-factor').value);
-            configs.gas.monthlyAbschlag = parseFloat(document.getElementById('gas-monthly-abschlag').value);
-            configs.water.monthlyAbschlag = parseFloat(document.getElementById('water-monthly-abschlag').value);
+            if (editing && editing.key === key) {
+                const record = data[key].find(item => item.id === editing.id);
+                if (record) Object.assign(record, { date, reading });
+                editing = null;
+                showToast('Messwert geändert.');
+            } else {
+                data[key].push({ id: `${key}-${Date.now()}-${Math.random().toString(36).slice(2)}`, date, reading });
+                showToast('Messwert gespeichert.');
+            }
+
+            data[key].sort((a, b) => a.date.localeCompare(b.date));
+            const invalid = data[key].some((record, index, records) => index > 0 && record.reading < records[index - 1].reading);
+            if (invalid) {
+                showToast('Hinweis: Ein Zählerstand liegt unter dem vorherigen Wert.');
+            }
             saveData();
-            init();
-            alert('Configuration saved successfully.');
+            renderInput();
+            renderDashboard();
         }
 
-        // Initialize the page on load
+        function editReading(key, id) {
+            id = decodeURIComponent(id);
+            const record = data[key].find(item => item.id === id);
+            if (!record) return;
+            editing = { key, id, date: record.date, reading: record.reading };
+            openInputTab();
+            renderInput();
+            document.getElementById(`${key}-reading`).focus();
+        }
+
+        function cancelEdit() {
+            editing = null;
+            renderInput();
+        }
+
+        function deleteReading(key, id) {
+            if (!confirm('Diesen Messwert wirklich löschen?')) return;
+            id = decodeURIComponent(id);
+            data[key] = data[key].filter(record => record.id !== id);
+            if (editing && editing.id === id) editing = null;
+            saveData();
+            renderInput();
+            renderDashboard();
+            showToast('Messwert gelöscht.');
+        }
+
+        function renderConfig() {
+            const fields = [
+                ['basePrice', 'Grundpreis (€/Monat)', '0.01'],
+                ['workPrice', 'Arbeitspreis', '0.0001'],
+                ['monthlyAbschlag', 'Monatlicher Abschlag (€)', '0.01']
+            ];
+            const container = document.getElementById('config-content');
+            container.innerHTML = Object.keys(UTILITY_META).map(key => {
+                const meta = UTILITY_META[key];
+                const keyFields = key === 'gas'
+                    ? [...fields, ['conversionFactor', 'Umrechnungsfaktor (kWh/m³)', '0.01']]
+                    : fields;
+                return `
+                    <div class="card utility-card mb-4">
+                        <div class="card-body">
+                            <h5 class="mb-4"><i class="bi bi-${meta.icon} me-2" style="color:${meta.color}"></i>${meta.name}</h5>
+                            <div class="row g-3">
+                                ${keyFields.map(([field, label, step]) => {
+                                    let suffix = '';
+                                    if (field === 'workPrice') suffix = key === 'electricity' ? '€/kWh' : key === 'gas' ? '€/kWh' : '€/m³';
+                                    if (field === 'conversionFactor') suffix = 'kWh/m³';
+                                    return `<div class="col-md-6 col-lg-3">
+                                        <label class="form-label" for="${key}-${field}">${label}</label>
+                                        <div class="input-group config-input">
+                                            <input id="${key}-${field}" type="number" step="${step}" class="form-control" value="${configs[key][field] ?? ''}">
+                                            ${suffix ? `<span class="input-group-text">${suffix}</span>` : ''}
+                                        </div>
+                                    </div>`;
+                                }).join('')}
+                            </div>
+                        </div>
+                    </div>`;
+            }).join('') + `
+                <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center">
+                    <button class="btn btn-primary" onclick="saveConfig()"><i class="bi bi-check-lg me-1"></i>Tarife speichern</button>
+                    <button class="btn btn-outline-danger" onclick="clearAllData()"><i class="bi bi-trash me-1"></i>Alle Messwerte löschen</button>
+                </div>`;
+        }
+
+        function saveConfig() {
+            Object.keys(UTILITY_META).forEach(key => {
+                Object.keys(configs[key]).forEach(field => {
+                    const input = document.getElementById(`${key}-${field}`);
+                    if (input) {
+                        const value = Number(input.value);
+                        if (Number.isFinite(value) && value >= 0) configs[key][field] = value;
+                    }
+                });
+            });
+            saveData();
+            renderConfig();
+            renderDashboard();
+            showToast('Konfiguration gespeichert.');
+        }
+
+        function clearAllData() {
+            if (!confirm('Alle Messwerte für Strom, Gas und Wasser wirklich löschen?')) return;
+            if (!confirm('Letzte Bestätigung: Diese Aktion kann nicht rückgängig gemacht werden.')) return;
+            data = { electricity: [], gas: [], water: [] };
+            editing = null;
+            saveData();
+            renderInput();
+            renderDashboard();
+            renderConfig();
+            showToast('Alle Messwerte gelöscht.');
+        }
+
+        function exportData() {
+            const payload = {
+                app: 'Utility Tracker Eichstätt',
+                version: '1.1.0',
+                exportedAt: new Date().toISOString(),
+                configs,
+                data
+            };
+            downloadFile(JSON.stringify(payload, null, 2), 'utility-data.json', 'application/json');
+        }
+
+        function exportCSV() {
+            const rows = [['utility', 'date', 'meter_reading', 'unit']];
+            Object.keys(UTILITY_META).forEach(key => {
+                data[key].slice().sort((a, b) => a.date.localeCompare(b.date)).forEach(record => {
+                    rows.push([UTILITY_META[key].name, record.date, record.reading, UTILITY_META[key].inputUnit]);
+                });
+            });
+            const csv = '\uFEFF' + rows.map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(';')).join('\r\n');
+            downloadFile(csv, 'utility-data.csv', 'text/csv;charset=utf-8');
+        }
+
+        function downloadFile(content, filename, type) {
+            const url = URL.createObjectURL(new Blob([content], { type }));
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+        }
+
+        document.getElementById('import-file').addEventListener('change', event => {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+                try {
+                    const payload = JSON.parse(reader.result);
+                    const importedData = payload.data || payload;
+                    const importedStore = normalizeStore(importedData);
+                    Object.keys(importedStore).forEach(key => {
+                        const existingIds = new Set(data[key].map(record => record.id));
+                        importedStore[key].forEach(record => {
+                            if (!existingIds.has(record.id)) {
+                                data[key].push(record);
+                                existingIds.add(record.id);
+                            }
+                        });
+                        data[key].sort((a, b) => a.date.localeCompare(b.date));
+                    });
+                    if (payload.configs) configs = mergeConfigs(payload.configs);
+                    saveData();
+                    renderDashboard();
+                    renderInput();
+                    renderConfig();
+                    showToast('Daten erfolgreich importiert.');
+                } catch (_) {
+                    showToast('Die Datei konnte nicht gelesen werden.');
+                } finally {
+                    event.target.value = '';
+                }
+            };
+            reader.readAsText(file);
+        });
+
+        function init() {
+            renderDashboard();
+            renderInput();
+            renderConfig();
+        }
+
         init();
     </script>
 </body>
